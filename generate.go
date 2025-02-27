@@ -21,6 +21,7 @@ import (
 )
 
 type GenerateCommand struct {
+	fileMetadata map[string]any
 }
 
 func NewGenerateCmd() Command {
@@ -106,6 +107,46 @@ func buildProject(src, dst string, vars map[string]any) error {
 // invoke it in the beginning
 // store all of it in hierarchical structure inside map
 // before rendering template append also "Self" field
+
+func (g *GenerateCommand) gatherMetadata(src string) error {
+	markdown := goldmark.New(
+		goldmark.WithExtensions(extension.GFM),
+		goldmark.WithExtensions(meta.New(meta.WithStoresInDocument())),
+		goldmark.WithRendererOptions(html.WithUnsafe()),
+	)
+	filesMetadata := map[string]any{}
+	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if d.IsDir() {
+			return nil
+		}
+
+		// if it's not a markdown file then just copy it
+		if !strings.HasSuffix(path, ".md") {
+			return nil
+		}
+
+		//parts := strings.Split(path, "/")
+
+		// markdown template file
+		mdFile, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer mdFile.Close()
+
+		mdFileContent, err := io.ReadAll(mdFile)
+		document := markdown.Parser().Parse(text.NewReader(mdFileContent))
+
+		metadata := document.OwnerDocument().Meta()
+
+		filesMetadata[path] = metadata
+		return nil
+	})
+}
 
 func (g *GenerateCommand) Run(ctx context.Context, args []string) error {
 	wildFile, err := os.Open("wild.yml")
